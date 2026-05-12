@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; connect-src 'self' https://api.github.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; manifest-src 'self';">
+<meta name="theme-color" content="#3b82f6">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="帳單追蹤">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<title>帳單追蹤 Bill Tracker</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --card-paid: #f3f4f6;
+    --border: #e2e5ea;
+    --border-strong: #cbd5e1;
+    --text: #1f2530;
+    --text-muted: #6b7280;
+    --text-dim: #9ca3af;
+    --accent: #3b82f6;
+    --accent-dark: #1d4ed8;
+    --paid: #6b7280;
+    --unpaid: #3b82f6;
+    --due-soon: #f59e0b;
+    --overdue: #ef4444;
+    --success: #10b981;
+    --warn: #f59e0b;
+    --error: #ef4444;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.10);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.18);
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC",
+      "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 100vh;
+  }
+
+  /* ===== Header ===== */
+  header {
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    color: white;
+    padding: 14px 20px;
+    padding-top: calc(14px + env(safe-area-inset-top));
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sync-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    background: rgba(255,255,255,0.18);
+    cursor: pointer;
+  }
+  .sync-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+  }
+  .sync-indicator.syncing .sync-dot { background: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
+  .sync-indicator.error .sync-dot { background: var(--error); }
+  .sync-indicator.offline .sync-dot { background: var(--text-dim); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ===== Layout ===== */
+  .container {
+    width: 100%;
+    padding: 14px;
+    padding-bottom: calc(80px + env(safe-area-inset-bottom));
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 14px;
+    box-shadow: var(--shadow-sm);
+  }
+  .card h2 {
+    margin: 0 0 12px;
+    font-size: 1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .card h2 .toolbar {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  /* ===== Buttons ===== */
+  button, .btn {
+    font: inherit;
+    cursor: pointer;
+    padding: 9px 14px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: var(--accent);
+    color: white;
+    font-weight: 500;
+    min-height: 40px;
+    transition: filter 0.15s, transform 0.05s;
+    -webkit-appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  button:hover { filter: brightness(1.08); }
+  button:active { transform: translateY(1px); }
+  button:focus-visible { outline: 2px solid var(--accent-dark); outline-offset: 2px; }
+  button.secondary { background: #e5e7eb; color: var(--text); }
+  button.ghost {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--border);
+  }
+  button.ghost:hover { background: rgba(59,130,246,0.06); }
+  button.danger { background: var(--error); }
+  button.small { padding: 5px 10px; min-height: 32px; font-size: 0.85rem; }
+  button.icon-only { padding: 8px; min-width: 40px; }
+
+  /* ===== Inputs ===== */
+  input, select, textarea {
+    font: inherit;
+    padding: 9px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    background: white;
+    color: var(--text);
+    min-height: 40px;
+    width: 100%;
+    -webkit-appearance: none;
+  }
+  input[type="checkbox"], input[type="radio"] {
+    -webkit-appearance: auto;
+    appearance: auto;
+    width: 18px;
+    height: 18px;
+    min-height: 0;
+    padding: 0;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+    border: none;
+    outline: none;
+  }
+  input[type="checkbox"]:focus, input[type="radio"]:focus { outline: none; }
+  input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+    border-color: var(--accent);
+  }
+  input.error, input:invalid:not(:placeholder-shown) { border-color: var(--error); }
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .field label { font-size: 0.78rem; color: var(--text-muted); font-weight: 500; }
+  .field .hint { font-size: 0.72rem; color: var(--text-dim); }
+  .field .err-msg { font-size: 0.72rem; color: var(--error); }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+  }
+  .full-span { grid-column: 1 / -1; }
+
+  /* ===== Toggle switch ===== */
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+    padding: 6px 0;
+  }
+  .toggle input { position: absolute; opacity: 0; pointer-events: none; }
+  .toggle .track {
+    width: 44px;
+    height: 24px;
+    background: #d1d5db;
+    border-radius: 999px;
+    position: relative;
+    transition: background 0.15s;
+    flex-shrink: 0;
+  }
+  .toggle .thumb {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: white;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.18s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  }
+  .toggle input:checked + .track { background: var(--accent); }
+  .toggle input:checked + .track .thumb { transform: translateX(20px); }
+  .toggle input:focus-visible + .track { box-shadow: 0 0 0 3px rgba(59,130,246,0.35); }
+  .toggle .label-text { font-size: 0.9rem; }
+
+  /* Date quick chips */
+  .chips {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  .chip {
+    font-size: 0.72rem;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #eef2f7;
+    color: var(--text-muted);
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .chip:hover { background: #dbeafe; color: var(--accent); }
+  .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* Amount with formatted display */
+  .amount-input-wrap { position: relative; }
+  .amount-input-wrap .formatted {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    pointer-events: none;
+  }
+
+  /* ===== Setup panel ===== */
+  .setup-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15,23,42,0.55);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    display: none;
+  }
+  .setup-overlay.open { display: flex; }
+  .setup-panel {
+    background: white;
+    border-radius: 14px;
+    width: 100%;
+    max-width: 520px;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 22px;
+    box-shadow: var(--shadow-lg);
+  }
+  .setup-panel h2 { margin-top: 0; }
+  .setup-step {
+    border-left: 3px solid var(--accent);
+    padding: 6px 0 6px 12px;
+    margin: 10px 0;
+    font-size: 0.92rem;
+  }
+  .setup-step strong { color: var(--accent); }
+  .setup-mode-tabs {
+    display: flex;
+    gap: 6px;
+    margin: 8px 0 14px;
+  }
+  .setup-mode-tab {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: white;
+    color: var(--text-muted);
+    text-align: center;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 0.88rem;
+  }
+  .setup-mode-tab.active {
+    background: rgba(59,130,246,0.08);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* ===== Bills List ===== */
+  #bills-list { display: flex; flex-direction: column; gap: 10px; }
+  .old-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: #f3f4f6;
+    border: 1px dashed var(--border-strong);
+    border-radius: 8px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .bill {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: var(--card);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    position: relative;
+    transition: transform 0.15s, background 0.15s;
+    cursor: pointer;
+  }
+  .bill:hover { background: #f9fafb; }
+  .bill.paid:hover { background: #eef0f3; }
+  .bill.paid {
+    background: var(--card-paid);
+    opacity: 0.78;
+  }
+  .bill.paid .bill-name { text-decoration: line-through; color: var(--text-muted); }
+  .bill.overdue:not(.paid) { background: #fef2f2; border-color: #fecaca; }
+  .bill.due-soon:not(.paid):not(.overdue) {
+    border-color: var(--overdue);
+    box-shadow: 0 0 0 2px rgba(239,68,68,0.18);
+  }
+  .bill.selected { box-shadow: 0 0 0 2px var(--accent); }
+
+  .bill-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .bill-info { flex: 1; min-width: 0; }
+  .bill-name {
+    font-weight: 600;
+    font-size: 0.92rem;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+    line-height: 1.25;
+  }
+  .bill-meta {
+    color: var(--text-muted);
+    font-size: 0.73rem;
+    margin-top: 1px;
+    word-wrap: break-word;
+    line-height: 1.35;
+  }
+  .bill-amount-block {
+    text-align: right;
+    min-width: 80px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0;
+  }
+  .bill-amount {
+    font-size: 0.96rem;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .bill-fee-line {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    margin-top: 0;
+    line-height: 1.3;
+  }
+  .bill-fee-line.pending { color: var(--warn); }
+  .bill-more {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 2px 6px;
+    min-height: 0;
+    font-size: 1.1rem;
+    line-height: 1;
+    border-radius: 5px;
+  }
+  .bill-more:hover { background: #e5e7eb; color: var(--text); }
+  .bill-paid-quick {
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    color: var(--text-muted);
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    min-height: 0;
+    border-radius: 5px;
+    font-size: 0.85rem;
+    line-height: 1;
+  }
+  .bill-paid-quick.checked {
+    background: var(--paid);
+    color: white;
+    border-color: var(--paid);
+  }
+  .bill-actions-mini {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .badge {
+    font-size: 0.64rem;
+    padding: 1px 6px;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+  }
+  .badge.paid { background: #d1d5db; color: #374151; }
+  .badge.unpaid { background: #dbeafe; color: #1e40af; }
+  .badge.overdue { background: #fee2e2; color: #991b1b; }
+  .badge.due-soon { background: #fee2e2; color: #991b1b; }
+  .badge.overseas { background: #ede9fe; color: #5b21b6; }
+  .badge.pending-fee { background: #fef3c7; color: #92400e; }
+
+  .bill-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+    padding-top: 4px;
+  }
+  .bill-actions .grow { flex: 1; }
+
+  .bill-select-check {
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--border-strong);
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .bill-select-check.checked {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+  body:not(.selection-mode) .bill-select-check { display: none; }
+
+  /* List toolbar */
+  .list-toolbar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .list-toolbar input[type="search"] {
+    flex: 1;
+    min-width: 140px;
+  }
+
+  /* ===== Selection footer ===== */
+  .selection-bar {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%) translateY(140%);
+    background: var(--text);
+    color: white;
+    padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    border-radius: 14px;
+    box-shadow: var(--shadow-lg);
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    transition: transform 0.25s cubic-bezier(.4,0,.2,1);
+    max-width: calc(100vw - 24px);
+  }
+  body.selection-mode .selection-bar.has-selection {
+    transform: translateX(-50%) translateY(0);
+  }
+  .selection-bar .info { font-size: 0.92rem; line-height: 1.3; }
+  .selection-bar .total {
+    font-weight: 700;
+    font-size: 1.08rem;
+    color: #fde68a;
+  }
+  .selection-bar button {
+    background: rgba(255,255,255,0.18);
+    color: white;
+    border: none;
+    padding: 7px 12px;
+    min-height: 36px;
+    font-size: 0.85rem;
+  }
+  .selection-bar button.primary {
+    background: var(--accent);
+  }
+
+  /* ===== Floating action button ===== */
+  .fab {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    bottom: calc(20px + env(safe-area-inset-bottom));
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    border: none;
+    box-shadow: var(--shadow-lg);
+    font-size: 1.8rem;
+    z-index: 60;
+    padding: 0;
+    line-height: 1;
+    transition: transform 0.2s;
+  }
+  body.selection-mode .fab { transform: translateY(120px) scale(0.5); pointer-events: none; }
+
+  /* ===== Modal / Sheet ===== */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15,23,42,0.55);
+    backdrop-filter: blur(3px);
+    z-index: 90;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .modal-overlay.open { opacity: 1; pointer-events: auto; }
+  .modal {
+    position: fixed;
+    background: white;
+    border-radius: 14px;
+    box-shadow: var(--shadow-lg);
+    z-index: 95;
+    overflow-y: auto;
+    transform: translateY(120%);
+    transition: transform 0.28s cubic-bezier(.4,0,.2,1);
+  }
+  .modal.open { transform: translateY(0); }
+  @media (min-width: 720px) {
+    .modal {
+      right: 14px;
+      top: 14px;
+      bottom: 14px;
+      width: 440px;
+      max-width: calc(100vw - 28px);
+      border-radius: 14px;
+      transform: translateX(120%);
+    }
+    .modal.open { transform: translateX(0); }
+  }
+  @media (max-width: 719px) {
+    .modal {
+      left: 0;
+      right: 0;
+      bottom: 0;
+      max-height: 92vh;
+      border-radius: 14px 14px 0 0;
+    }
+  }
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 1;
+  }
+  .modal-body { padding: 16px 18px; }
+  .modal-footer {
+    padding: 12px 18px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    position: sticky;
+    bottom: 0;
+    background: white;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+
+  /* ===== Quick action menu ===== */
+  .qmenu {
+    position: absolute;
+    background: white;
+    border-radius: 10px;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border);
+    padding: 6px;
+    z-index: 70;
+    min-width: 160px;
+  }
+  .qmenu button {
+    width: 100%;
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+    justify-content: flex-start;
+    padding: 8px 10px;
+    min-height: 36px;
+    font-size: 0.9rem;
+  }
+  .qmenu button:hover { background: #f3f4f6; }
+  .qmenu button.danger { color: var(--error); }
+  .qmenu hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 4px 0;
+  }
+  .qmenu-toggle {
+    padding: 8px 10px;
+    margin: 0;
+    width: 100%;
+    justify-content: flex-start;
+    border-radius: 6px;
+  }
+  .qmenu-toggle:hover { background: #f3f4f6; }
+  .qmenu-toggle .label-text { font-size: 0.9rem; margin-left: 4px; }
+  .qmenu-info {
+    padding: 8px 10px;
+    border-radius: 6px;
+    min-width: 220px;
+    max-width: 280px;
+  }
+  .qmenu-info-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .qmenu-info-name {
+    font-size: 0.95rem;
+    line-height: 1.3;
+    word-break: break-word;
+  }
+  .qmenu-info-amt {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-top: 4px;
+  }
+  .qmenu-info-meta {
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+
+  /* ===== Gantt ===== */
+  .gantt-toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .gantt-wrap {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: white;
+    position: relative;
+    max-height: 60vh;
+  }
+  .gantt {
+    position: relative;
+    display: grid;
+    grid-template-rows: auto;
+    min-width: 100%;
+  }
+  .gantt-header {
+    display: flex;
+    position: sticky;
+    top: 0;
+    background: #f9fafb;
+    border-bottom: 1px solid var(--border);
+    z-index: 5;
+  }
+  .gantt-corner {
+    width: 140px;
+    min-width: 140px;
+    flex-shrink: 0;
+    padding: 8px 10px;
+    border-right: 1px solid var(--border);
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    background: #f9fafb;
+    position: sticky;
+    left: 0;
+    z-index: 6;
+  }
+  .gantt-tick-row {
+    flex: 1;
+    display: flex;
+    position: relative;
+    min-width: 0;
+  }
+  .gantt-tick {
+    border-right: 1px dashed #e5e7eb;
+    padding: 6px 4px;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+    box-sizing: border-box;
+  }
+  .gantt-row {
+    display: flex;
+    border-bottom: 1px solid #f1f3f5;
+    min-height: 48px;
+    align-items: stretch;
+  }
+  .gantt-row:last-child { border-bottom: none; }
+  .gantt-row-label {
+    width: 140px;
+    min-width: 140px;
+    flex-shrink: 0;
+    padding: 6px 10px;
+    border-right: 1px solid var(--border);
+    background: white;
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    font-size: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .gantt-row-label .nm {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .gantt-row-label .sub { font-size: 0.7rem; color: var(--text-muted); }
+  .gantt-track {
+    flex: 1;
+    position: relative;
+    min-height: 48px;
+    cursor: crosshair;
+    background-image: repeating-linear-gradient(
+      to right,
+      transparent 0 calc(var(--day-width, 8px) * 7 - 1px),
+      rgba(0,0,0,0.04) calc(var(--day-width, 8px) * 7 - 1px) calc(var(--day-width, 8px) * 7)
+    );
+  }
+  @media (hover: none) {
+    .gantt-track { cursor: default; }
+  }
+  .gantt-bar {
+    position: absolute;
+    top: 6px;
+    height: 32px;
+    background: var(--unpaid);
+    border-radius: 5px;
+    font-size: 0.72rem;
+    color: #1f2530;
+    padding: 3px 8px 0;
+    overflow: hidden;
+    white-space: nowrap;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.12);
+    transition: filter 0.12s;
+  }
+  .gantt-bar .b-main {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+    font-weight: 500;
+  }
+  .gantt-bar .b-dates {
+    position: absolute;
+    right: 4px;
+    bottom: 2px;
+    font-size: 0.6rem;
+    background: rgba(0,0,0,0.12);
+    color: #1f2530;
+    padding: 0 4px;
+    border-radius: 3px;
+    line-height: 1.3;
+    pointer-events: none;
+  }
+  .gantt-bar .b-fee {
+    position: absolute;
+    right: 4px;
+    top: 2px;
+    font-size: 0.6rem;
+    background: rgba(0,0,0,0.10);
+    color: #1f2530;
+    border-radius: 3px;
+    padding: 0 4px;
+    line-height: 1.4;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  /* Due date marker on track (unpaid bills) */
+  .gantt-due {
+    position: absolute;
+    width: 0;
+    border-left: 2px dashed var(--overdue);
+    z-index: 3;
+    pointer-events: none;
+  }
+  .gantt-due .due-label {
+    position: absolute;
+    left: 2px;
+    bottom: 0;
+    font-size: 0.6rem;
+    background: var(--overdue);
+    color: white;
+    padding: 0 4px;
+    border-radius: 3px;
+    line-height: 1.4;
+    white-space: nowrap;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  }
+  .gantt-due.overdue-flag .due-label { background: #7f1d1d; }
+  /* connector line from bar to due date marker */
+  .gantt-due-link {
+    position: absolute;
+    height: 2px;
+    background: repeating-linear-gradient(to right, var(--overdue) 0 3px, transparent 3px 6px);
+    z-index: 2;
+    pointer-events: none;
+  }
+  .gantt-bar:hover { filter: brightness(0.92); }
+  .gantt-bar.paid {
+    filter: grayscale(0.85);
+    opacity: 0.55;
+  }
+  .gantt-bar.overdue {
+    box-shadow: 0 0 0 2px var(--overdue) inset, 0 1px 2px rgba(0,0,0,0.15);
+  }
+  .gantt-bar.due-soon {
+    box-shadow: 0 0 0 2px var(--overdue) inset, 0 1px 2px rgba(0,0,0,0.15);
+  }
+  .gantt-today {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--overdue);
+    z-index: 4;
+    pointer-events: none;
+  }
+  .gantt-today-label {
+    position: absolute;
+    top: 2px;
+    background: var(--overdue);
+    color: white;
+    font-size: 0.62rem;
+    padding: 1px 6px;
+    border-radius: 3px;
+    transform: translateX(-50%);
+    z-index: 6;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .gantt-ghost {
+    position: absolute;
+    top: 6px;
+    height: 32px;
+    background: rgba(59,130,246,0.35);
+    border: 1.5px dashed var(--accent);
+    border-radius: 5px;
+    pointer-events: none;
+    z-index: 4;
+  }
+
+  /* ===== Share calc ===== */
+  .share-bills {
+    max-height: 240px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px;
+  }
+  .share-bill-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-bottom: 1px solid #f3f4f6;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+  .share-bill-row:last-child { border-bottom: none; }
+  .share-bill-row:hover { background: #f9fafb; }
+  .share-bill-row input { width: auto; min-height: auto; margin: 0; }
+  .share-bill-row .nm { flex: 1; font-size: 0.9rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .share-bill-row .dt { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; }
+  .share-result {
+    background: linear-gradient(135deg, #eff6ff, #faf5ff);
+    border: 1px solid #bfdbfe;
+    border-radius: 10px;
+    padding: 14px;
+    margin-top: 12px;
+  }
+  .share-result .per-person {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .share-detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--border);
+    font-size: 0.84rem;
+    gap: 8px;
+  }
+  .share-detail-row:last-child { border-bottom: none; }
+  .share-detail-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .share-detail-row .na { color: var(--text-muted); font-style: italic; }
+  .share-detail-row.applied .amt { font-weight: 600; }
+
+  /* ===== Toast ===== */
+  .toast-container {
+    position: fixed;
+    top: calc(60px + env(safe-area-inset-top));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+    width: max-content;
+    max-width: calc(100vw - 24px);
+  }
+  .toast {
+    background: var(--text);
+    color: white;
+    padding: 10px 16px;
+    border-radius: 999px;
+    font-size: 0.88rem;
+    box-shadow: var(--shadow-md);
+    pointer-events: auto;
+    animation: toast-in 0.25s ease-out;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .toast.success { background: var(--success); }
+  .toast.error { background: var(--error); }
+  .toast.warn { background: var(--warn); color: #1f2530; }
+  .toast button {
+    background: rgba(255,255,255,0.22);
+    color: inherit;
+    border: none;
+    padding: 4px 10px;
+    min-height: 28px;
+    font-size: 0.78rem;
+  }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(-12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .toast.out { animation: toast-out 0.22s ease-in forwards; }
+  @keyframes toast-out {
+    to { opacity: 0; transform: translateY(-10px); }
+  }
+
+  /* ===== Misc ===== */
+  .empty {
+    text-align: center;
+    padding: 32px 16px;
+    color: var(--text-muted);
+    font-size: 0.92rem;
+  }
+  .empty .big { font-size: 2.6rem; margin-bottom: 8px; }
+  .sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0);
+    border: 0;
+  }
+  .kbd {
+    background: #f3f4f6;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.78rem;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+  }
+
+  /* mobile tighten */
+  @media (max-width: 600px) {
+    header h1 { font-size: 1rem; }
+    .gantt-corner, .gantt-row-label { width: 110px; min-width: 110px; }
+    .card { padding: 14px 12px; }
+    .container { padding: 12px 10px; }
+  }
+
+  /* Desktop 2-column layout: gantt left, bills + share stacked right */
+  @media (min-width: 960px) {
+    main.container {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+      grid-template-areas:
+        "gantt bills"
+        "gantt share";
+      gap: 14px;
+      align-items: start;
+    }
+    .gantt-section  { grid-area: gantt; margin-bottom: 0; align-self: start; }
+    .bills-section  { grid-area: bills; margin-bottom: 0; }
+    .share-section  { grid-area: share; margin-bottom: 0; }
+    /* Gantt can use a bit more vertical space on desktop */
+    .gantt-wrap { max-height: calc(100vh - 200px); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-row">
+    <h1>
+      <span aria-hidden="true">💳</span>
+      帳單追蹤
+    </h1>
+    <div class="sync-indicator" id="sync-indicator" role="button" tabindex="0" aria-label="同步狀態">
+      <span class="sync-dot"></span>
+      <span class="sync-text">未連線</span>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+
+  <!-- Gantt (placed first for visual overview) -->
+  <section class="card gantt-section" aria-labelledby="gantt-title">
+    <h2 id="gantt-title">
+      <span>甘特圖</span>
+      <span class="gantt-toolbar">
+        <button id="gantt-prev" class="ghost small">← 更早 6 月</button>
+        <select id="gantt-zoom" aria-label="縮放">
+          <option value="month">月檢視</option>
+          <option value="week" selected>週檢視</option>
+        </select>
+        <button id="gantt-next" class="ghost small">更晚 6 月 →</button>
+        <button id="gantt-today" class="ghost small">今日</button>
+        <button id="gantt-reset" class="ghost small" title="回到自然範圍（依目前帳單推算）">↻ 重置</button>
+      </span>
+    </h2>
+    <div class="gantt-wrap" id="gantt-wrap">
+      <div class="empty">尚無資料</div>
+    </div>
+  </section>
+
+  <!-- Bills List -->
+  <section class="card bills-section" aria-labelledby="bills-title">
+    <h2 id="bills-title">
+      <span>帳單清單 <span id="bills-count" style="font-size:0.8rem;color:var(--text-muted);font-weight:400;"></span></span>
+      <span class="toolbar">
+        <label class="toggle" title="只看未繳">
+          <input type="checkbox" id="filter-unpaid">
+          <span class="track"><span class="thumb"></span></span>
+          <span class="label-text">只看未繳</span>
+        </label>
+        <label class="toggle" title="選取模式">
+          <input type="checkbox" id="selection-toggle">
+          <span class="track"><span class="thumb"></span></span>
+          <span class="label-text">選取</span>
+        </label>
+      </span>
+    </h2>
+    <div class="list-toolbar">
+      <input type="search" id="search" placeholder="🔎 搜尋名稱…" enterkeyhint="search">
+      <button id="btn-add" class="small">＋ 新增</button>
+      <button id="btn-export" class="ghost small">匯出</button>
+      <button id="btn-import" class="ghost small">匯入</button>
+      <button id="btn-settings" class="ghost small">設定</button>
+      <input type="file" id="import-file" accept="application/json" hidden>
+    </div>
+    <div id="bills-list"></div>
+  </section>
+
+  <!-- Share Calculator -->
+  <section class="card share-section" aria-labelledby="share-title">
+    <h2 id="share-title">分攤計算</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label for="share-cutoff">中斷點日期</label>
+        <input type="date" id="share-cutoff">
+        <div class="chips" id="share-cutoff-chips">
+          <button type="button" class="chip" data-cutoff="today">今天</button>
+          <button type="button" class="chip" data-cutoff="month-start">本月初</button>
+          <button type="button" class="chip" data-cutoff="month-end">本月底</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="share-people">人數</label>
+        <input type="number" id="share-people" min="1" step="1" value="2" inputmode="numeric">
+      </div>
+    </div>
+    <div class="field" style="margin-top:10px;">
+      <label>選擇要分攤的帳單</label>
+      <div class="list-toolbar" style="margin-bottom:6px;">
+        <button id="share-all" class="ghost small">全選</button>
+        <button id="share-none" class="ghost small">全不選</button>
+        <span class="hint" id="share-selected-count">已選 0 筆</span>
+      </div>
+      <div class="share-bills" id="share-bills"></div>
+    </div>
+    <div class="share-result" id="share-result" hidden></div>
+    <div style="margin-top:12px;">
+      <button id="share-calc">計算</button>
+    </div>
+  </section>
+
+</main>
+
+<!-- Floating Action Button -->
+<button class="fab" id="fab-add" aria-label="新增帳單">＋</button>
+
+<!-- Selection Bar -->
+<div class="selection-bar" id="selection-bar">
+  <div class="info">
+    已選 <strong id="sel-count">0</strong> 筆<br>
+    合計 <span class="total" id="sel-total">0</span>
+    <div id="sel-pending-fee" style="font-size:0.72rem;color:#fde68a;"></div>
+  </div>
+  <button id="sel-share" class="primary">分攤計算</button>
+  <button id="sel-exit">完成</button>
+</div>
+
+<!-- Bill Form Modal -->
+<div class="modal-overlay" id="form-overlay"></div>
+<div class="modal" id="form-modal" role="dialog" aria-labelledby="form-title" aria-modal="true">
+  <div class="modal-header">
+    <h3 id="form-title" style="margin:0;font-size:1.05rem;">新增帳單</h3>
+    <button class="ghost icon-only" id="form-close" aria-label="關閉">✕</button>
+  </div>
+  <form id="bill-form" class="modal-body" novalidate>
+    <input type="hidden" id="f-id">
+    <button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
+    <div class="form-grid">
+      <div class="field full-span">
+        <label for="f-name">項目名稱 <span class="hint">（同名歸到同一行）</span></label>
+        <input type="text" id="f-name" required autocomplete="off" enterkeyhint="next">
+        <div class="chips" id="name-chips"></div>
+        <div class="err-msg" id="err-name"></div>
+      </div>
+      <div class="field">
+        <label for="f-start">開始日</label>
+        <input type="date" id="f-start" required>
+        <div class="chips">
+          <button type="button" class="chip" data-set="f-start" data-d="today">今天</button>
+          <button type="button" class="chip" data-set="f-start" data-d="month-start">本月初</button>
+          <button type="button" class="chip" data-set="f-start" data-d="last-month-start">上月初</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="f-end">結束日</label>
+        <input type="date" id="f-end" required>
+        <div class="chips">
+          <button type="button" class="chip" data-set="f-end" data-d="today">今天</button>
+          <button type="button" class="chip" data-set="f-end" data-d="month-end">本月底</button>
+          <button type="button" class="chip" data-set="f-end" data-d="plus-30">+30 天</button>
+        </div>
+        <div class="err-msg" id="err-end"></div>
+      </div>
+      <div class="field">
+        <label for="f-amount">金額</label>
+        <div class="amount-input-wrap">
+          <input type="text" id="f-amount" required inputmode="decimal" placeholder="0">
+          <span class="formatted" id="f-amount-fmt"></span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="f-due">最後繳費日 <span class="hint">（可空）</span></label>
+        <input type="date" id="f-due">
+      </div>
+      <div class="field full-span">
+        <label class="toggle">
+          <input type="checkbox" id="f-overseas">
+          <span class="track"><span class="thumb"></span></span>
+          <span class="label-text">海外消費（可後補手續費）</span>
+        </label>
+      </div>
+      <div class="field" id="f-fee-row" hidden>
+        <label for="f-fee">手續費 <span class="hint">（留空 = 未入帳）</span></label>
+        <div class="amount-input-wrap">
+          <input type="text" id="f-fee" inputmode="decimal" placeholder="待入帳">
+          <span class="formatted" id="f-fee-fmt"></span>
+        </div>
+      </div>
+      <div class="field full-span">
+        <label class="toggle">
+          <input type="checkbox" id="f-paid">
+          <span class="track"><span class="thumb"></span></span>
+          <span class="label-text">已繳</span>
+        </label>
+      </div>
+      <div class="field" id="f-paid-row" hidden>
+        <label for="f-paid-date">繳費日</label>
+        <input type="date" id="f-paid-date">
+      </div>
+      <div class="field full-span">
+        <label for="f-note">備註</label>
+        <input type="text" id="f-note">
+      </div>
+    </div>
+  </form>
+  <div class="modal-footer">
+    <button id="form-delete" class="danger" hidden>刪除</button>
+    <button id="form-duplicate" class="ghost" hidden>複製到下期</button>
+    <button id="form-cancel" class="secondary">取消</button>
+    <button id="form-save" type="submit">儲存</button>
+  </div>
+</div>
+
+<!-- Setup Modal -->
+<div class="setup-overlay" id="setup-overlay">
+  <div class="setup-panel" id="setup-panel-input">
+    <h2>🔗 連接 GitHub Gist</h2>
+    <p style="font-size:0.9rem;color:var(--text-muted);">
+      帳單資料會儲存在你 GitHub 帳號下的一個 private Gist。需要一個 Personal Access Token（PAT）。
+    </p>
+
+    <div class="setup-mode-tabs">
+      <div class="setup-mode-tab active" data-mode="new">建立新 Gist</div>
+      <div class="setup-mode-tab" data-mode="existing">使用既有 Gist</div>
+    </div>
+
+    <div id="setup-new">
+      <div class="setup-step">
+        <strong>1.</strong> 點下面按鈕，會打開 GitHub Token 產生頁（已預填正確 scope）
+        <div style="margin-top:8px;">
+          <a href="https://github.com/settings/tokens/new?scopes=gist&description=Bill+Tracker"
+             target="_blank" rel="noopener noreferrer">
+            <button class="ghost small">開啟 GitHub Token 產生頁 ↗</button>
+          </a>
+        </div>
+      </div>
+      <div class="setup-step">
+        <strong>2.</strong> 確認 <code style="background:#f3f4f6;padding:1px 5px;border-radius:3px;">gist</code> 已勾選 → 拉到底點「Generate token」
+      </div>
+      <div class="setup-step">
+        <strong>3.</strong> 複製出現的 token（只會顯示這一次！）→ 貼到下方欄位
+      </div>
+    </div>
+
+    <div id="setup-existing" hidden>
+      <div class="setup-step">
+        <strong>1.</strong> 你的 Gist ID 可以從原本裝置複製：開設定面板 → 顯示 Gist ID
+      </div>
+      <div class="setup-step">
+        <strong>2.</strong> 同樣需要一個有 <code>gist</code> 權限的 token（可重用之前的，或開新的）
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:14px;">
+      <label for="setup-token">Personal Access Token</label>
+      <input type="password" id="setup-token" placeholder="ghp_…" autocomplete="off">
+    </div>
+    <div class="field" id="setup-gist-id-row" hidden style="margin-top:10px;">
+      <label for="setup-gist-id">Gist ID</label>
+      <input type="text" id="setup-gist-id" placeholder="例如 1a2b3c4d5e…" autocomplete="off">
+    </div>
+    <div class="err-msg" id="setup-err" style="margin-top:8px;"></div>
+    <div style="margin-top:16px; display:flex; gap:8px; justify-content:flex-end;">
+      <button id="setup-cancel" class="secondary" hidden>取消</button>
+      <button id="setup-go">連接</button>
+    </div>
+
+    <div style="margin-top:14px; font-size:0.78rem; color:var(--text-muted); border-top:1px solid var(--border); padding-top:10px;">
+      ℹ️ Token 與 Gist ID 會存在這個瀏覽器的 localStorage，帳單資料本身只存在 GitHub Gist。
+      <br>
+      <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer">隨時撤銷 token ↗</a>
+    </div>
+  </div>
+
+  <!-- Success view -->
+  <div class="setup-panel" id="setup-panel-success" hidden>
+    <h2 style="color:var(--success);">✅ 連線成功</h2>
+    <p style="font-size:0.9rem;color:var(--text-muted);" id="setup-success-msg">資料已就緒。</p>
+    <div class="field" style="margin-top:14px;">
+      <label>你的 Gist ID（在新裝置接管時需要）</label>
+      <div style="display:flex; gap:6px;">
+        <input type="text" id="setup-success-id" readonly>
+        <button id="setup-copy-id" class="ghost">複製</button>
+      </div>
+      <div class="hint">⚠️ 請妥善保存。也可在「設定」面板再次取得。</div>
+    </div>
+    <div style="margin-top:18px; display:flex; gap:8px; justify-content:flex-end;">
+      <button id="setup-done">完成</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings (current state) -->
+<div class="modal-overlay" id="settings-overlay"></div>
+<div class="modal" id="settings-modal" role="dialog" aria-modal="true">
+  <div class="modal-header">
+    <h3 style="margin:0;">設定</h3>
+    <button class="ghost icon-only" id="settings-close" aria-label="關閉">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="field">
+      <label>連線狀態</label>
+      <div id="settings-status" style="font-size:0.9rem;"></div>
+    </div>
+    <div class="field" style="margin-top:12px;">
+      <label>Gist ID</label>
+      <input type="text" id="settings-gist-id" readonly>
+      <div class="hint">將此 ID 與 token 在新裝置貼入即可同步</div>
+    </div>
+    <div class="field" style="margin-top:12px;">
+      <label>Token</label>
+      <input type="password" id="settings-token" readonly>
+      <button class="ghost small" id="settings-token-toggle" type="button" style="align-self:flex-start; margin-top:4px;">顯示/隱藏</button>
+    </div>
+    <div style="margin-top:18px; padding-top:12px; border-top:1px solid var(--border);">
+      <button id="settings-resync" class="ghost">重新從 Gist 載入</button>
+      <button id="settings-logout" class="danger" style="margin-top:8px;">登出（清除 token 與 ID）</button>
+    </div>
+    <details style="margin-top:14px;">
+      <summary style="cursor:pointer;font-size:0.85rem;color:var(--text-muted);">鍵盤快捷</summary>
+      <div style="margin-top:8px;font-size:0.85rem;">
+        <kbd class="kbd">N</kbd> 新增 ・
+        <kbd class="kbd">/</kbd> 搜尋 ・
+        <kbd class="kbd">S</kbd> 切換只看未繳 ・
+        <kbd class="kbd">?</kbd> 顯示快捷 ・
+        <kbd class="kbd">Esc</kbd> 關閉 ・
+        <kbd class="kbd">⌘/Ctrl+Enter</kbd> 送出
+      </div>
+    </details>
+  </div>
+</div>
+
+<!-- Quick action menu (populated dynamically) -->
+<div class="qmenu" id="qmenu" hidden></div>
+
+<!-- Toasts -->
+<div class="toast-container" id="toast-container"></div>
+
+<script src="app.js" defer></script>
+</body>
+</html>
