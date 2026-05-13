@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; connect-src 'self' https://api.github.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; manifest-src 'self';">
 <meta name="theme-color" content="#3b82f6">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -718,7 +718,7 @@
     display: flex;
     gap: 8px;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     margin-bottom: 10px;
   }
   .gantt-wrap {
@@ -772,6 +772,10 @@
     white-space: nowrap;
     flex-shrink: 0;
     box-sizing: border-box;
+  }
+  .gantt-tick .t-label {
+    display: inline-block;
+    transform-origin: 0 0;
   }
   .gantt-row {
     display: flex;
@@ -1061,6 +1065,16 @@
     .gantt-corner, .gantt-row-label { width: 110px; min-width: 110px; }
     .card { padding: 14px 12px; }
     .container { padding: 12px 10px; }
+    .gantt-toolbar {
+      flex-wrap: nowrap;
+      gap: 4px;
+      overflow-x: auto;
+    }
+    .gantt-toolbar .lbl { display: none; }
+    .gantt-toolbar button {
+      padding: 5px 9px;
+      flex-shrink: 0;
+    }
   }
 
   /* Desktop 2-column layout: gantt left, bills + share stacked right */
@@ -1079,6 +1093,121 @@
     .share-section  { grid-area: share; margin-bottom: 0; }
     /* Gantt can use a bit more vertical space on desktop */
     .gantt-wrap { max-height: calc(100vh - 200px); }
+  }
+
+  /* ===== Gantt fullscreen ===== */
+  .gantt-section:fullscreen #gantt-title,
+  .gantt-section:-webkit-full-screen #gantt-title,
+  .gantt-section.gantt-fs-fallback #gantt-title {
+    /* 標題列改為浮層，不佔據版面 */
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 100;
+    margin: 0;
+    display: block;
+  }
+  .gantt-section:fullscreen .gantt-toolbar,
+  .gantt-section:-webkit-full-screen .gantt-toolbar,
+  .gantt-section.gantt-fs-fallback .gantt-toolbar {
+    margin: 0;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 5px 8px;
+    gap: 4px;
+    box-shadow: var(--shadow-sm);
+  }
+  .gantt-section:fullscreen .gantt-toolbar .lbl,
+  .gantt-section:-webkit-full-screen .gantt-toolbar .lbl,
+  .gantt-section.gantt-fs-fallback .gantt-toolbar .lbl {
+    display: none;
+  }
+  .gantt-section:fullscreen .gantt-toolbar button,
+  .gantt-section:-webkit-full-screen .gantt-toolbar button,
+  .gantt-section.gantt-fs-fallback .gantt-toolbar button {
+    padding: 6px 10px;
+    font-size: 0.88rem;
+    min-height: 0;
+    line-height: 1.1;
+  }
+  /* 退出鈕保持與其他按鈕同尺寸，僅以顏色區分 */
+  .gantt-section:fullscreen #gantt-fullscreen,
+  .gantt-section:-webkit-full-screen #gantt-fullscreen,
+  .gantt-section.gantt-fs-fallback #gantt-fullscreen {
+    margin-left: 4px;
+    background: #fee2e2;
+    color: #991b1b;
+    border-color: #fca5a5;
+    font-weight: 700;
+  }
+  /* 全螢幕中 #gantt-fullscreen 仍顯示「✕ 退出」（由稍後規則 override） */
+
+  .gantt-section:fullscreen,
+  .gantt-section:-webkit-full-screen {
+    background: var(--bg);
+    padding:
+      max(10px, env(safe-area-inset-top))
+      max(10px, env(safe-area-inset-right))
+      max(10px, env(safe-area-inset-bottom))
+      max(10px, env(safe-area-inset-left));
+    margin: 0;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .gantt-section:fullscreen .gantt-wrap,
+  .gantt-section:-webkit-full-screen .gantt-wrap {
+    max-height: none;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+  /* Hide fullscreen button on desktop (pointer:fine) */
+  @media (pointer: fine) {
+    #gantt-fullscreen { display: none; }
+  }
+
+  /* ===== Gantt fullscreen fallback (iOS / 不支援 Fullscreen API) ===== */
+  body.gantt-fs-fallback-active {
+    overflow: hidden;
+    touch-action: none;
+  }
+  .gantt-section.gantt-fs-fallback {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vh;
+    height: 100vw;
+    transform-origin: 0 0;
+    transform: rotate(90deg) translateY(-100%);
+    z-index: 9999;
+    background: var(--bg);
+    /* 旋轉映射（rotate 90deg + translateY(-100%)）：
+       element 左 → 螢幕上（動態島）
+       element 右 → 螢幕下（home indicator）
+       element 上 → 螢幕右
+       element 下 → 螢幕左 */
+    padding: 10px;
+    padding-left: max(10px, env(safe-area-inset-top), env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-bottom), env(safe-area-inset-right));
+    margin: 0;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .gantt-section.gantt-fs-fallback .gantt-wrap {
+    max-height: none;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    touch-action: pan-x pan-y;
   }
 </style>
 </head>
@@ -1102,16 +1231,14 @@
   <!-- Gantt (placed first for visual overview) -->
   <section class="card gantt-section" aria-labelledby="gantt-title">
     <h2 id="gantt-title">
-      <span>甘特圖</span>
+      <span class="sr-only">甘特圖</span>
       <span class="gantt-toolbar">
-        <button id="gantt-prev" class="ghost small">← 更早 6 月</button>
-        <select id="gantt-zoom" aria-label="縮放">
-          <option value="month">月檢視</option>
-          <option value="week" selected>週檢視</option>
-        </select>
-        <button id="gantt-next" class="ghost small">更晚 6 月 →</button>
-        <button id="gantt-today" class="ghost small">今日</button>
-        <button id="gantt-reset" class="ghost small" title="回到自然範圍（依目前帳單推算）">↻ 重置</button>
+        <button id="gantt-prev" class="ghost small">←<span class="lbl"> 更早 6 月</span></button>
+        <button id="gantt-zoom" class="ghost small" aria-label="切換月/週檢視" data-value="week">週檢視</button>
+        <button id="gantt-next" class="ghost small"><span class="lbl">更晚 6 月 </span>→</button>
+        <button id="gantt-today" class="ghost small">今<span class="lbl">日</span></button>
+        <button id="gantt-reset" class="ghost small" title="回到自然範圍（依目前帳單推算）">↻<span class="lbl"> 重置</span></button>
+        <button id="gantt-fullscreen" class="ghost small" title="全螢幕橫向檢視" aria-label="全螢幕">⛶</button>
       </span>
     </h2>
     <div class="gantt-wrap" id="gantt-wrap">

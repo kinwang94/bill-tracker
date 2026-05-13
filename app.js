@@ -43,6 +43,7 @@ let state = {
   ganttRangeStart: null,
   ganttRangeEnd: null,
   ganttZoom: 'week',
+  ganttPxScale: 1,
   editingId: null,
   showOld: false, // 是否顯示已收合的舊帳單（預設收合）
 };
@@ -961,8 +962,9 @@ function importJson(e) {
 
 // ---------- Gantt ----------
 function bindGantt() {
-  $('gantt-zoom').addEventListener('change', () => {
-    state.ganttZoom = $('gantt-zoom').value;
+  $('gantt-zoom').addEventListener('click', () => {
+    state.ganttZoom = state.ganttZoom === 'week' ? 'month' : 'week';
+    syncGanttZoomLabels();
     renderGantt();
   });
   $('gantt-prev').addEventListener('click', () => {
@@ -988,11 +990,237 @@ function bindGantt() {
   $('gantt-reset').addEventListener('click', () => {
     state.ganttRangeStart = null;
     state.ganttRangeEnd = null;
+    state.ganttPxScale = 1;
     const wrap = $('gantt-wrap');
     if (wrap) wrap._scrolled = false; // 重新置中到今日
     renderGantt();
     toast('已重置範圍', 'success', { duration: 1500 });
   });
+
+  const fsBtn = $('gantt-fullscreen');
+  if (fsBtn) {
+    fsBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await toggleGanttFullscreen();
+    });
+  }
+  // 點甘特圖空白區域進入全螢幕（手機觸控才觸發）
+  const wrap = $('gantt-wrap');
+  if (wrap) {
+    wrap.addEventListener('click', async (e) => {
+      if (matchMedia('(pointer: fine)').matches) return;
+      if (document.fullscreenElement) return;
+      if (document.querySelector('.gantt-section.gantt-fs-fallback')) return;
+      if (e.target.closest('.gantt-bar, .gantt-due, button, select, a')) return;
+      await enterGanttFullscreen();
+    });
+  }
+  document.addEventListener('fullscreenchange', onGanttFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', onGanttFullscreenChange);
+
+  bindGanttPinch(wrap);
+
+  syncGanttZoomLabels();
+  matchMedia('(max-width: 600px)').addEventListener('change', syncGanttZoomLabels);
+}
+
+function isGanttFullscreen() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement ||
+    document.querySelector('.gantt-section.gantt-fs-fallback'));
+}
+
+function syncGanttZoomLabels() {
+  const btn = $('gantt-zoom');
+  if (btn) {
+    const compact = isGanttFullscreen() || matchMedia('(max-width: 600px)').matches;
+    const isMonth = state.ganttZoom === 'month';
+    btn.dataset.value = state.ganttZoom;
+    btn.textContent = compact
+      ? (isMonth ? '月' : '週')
+      : (isMonth ? '月檢視' : '週檢視');
+  }
+  const fs = $('gantt-fullscreen');
+  if (fs) fs.textContent = isGanttFullscreen() ? '✕' : '⛶';
+}
+
+function applyPinchVisual(wrap, ratio) {
+  const tickRow = wrap.querySelector('.gantt-tick-row');
+  const tracks = wrap.querySelectorAll('.gantt-track');
+  const setT = (el, s) => {
+    if (!el) return;
+    if (s === 1) {
+      el.style.transform = '';
+      el.style.transformOrigin = '';
+    } else {
+      el.style.transformOrigin = '0 0';
+      el.style.transform = `scaleX(${s})`;
+    }
+  };
+  // 父層水平放大 → 子元素位置跟著放大
+  setT(tickRow, ratio);
+  tracks.forEach(t => setT(t, ratio));
+  // 對絕對定位的子元素反向抵消寬度與文字拉伸（位置不變）
+  const inv = ratio === 0 ? 1 : 1 / ratio;
+  wrap.querySelectorAll(
+    '.gantt-bar, .gantt-due, .gantt-due-link, .gantt-today, .gantt-today-label, .gantt-tick .t-label'
+  ).forEach(el => setT(el, inv));
+}
+
+function bindGanttPinch(wrap) {
+  if (!wrap) return;
+  let startDist = 0;
+  let startScale = 1;
+  let lastRatio = 1;
+  let pinching = false;
+  let anchorRatio = 0; // (scrollLeft + focalX) / contentWidth — 維持焦點
+
+  const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+  wrap.addEventListener('touchstart', (e) => {
+    if (!isGanttFullscreen()) return;
+    if (e.touches.length !== 2) return;
+    pinching = true;
+    startDist = dist(e.touches[0], e.touches[1]);
+    startScale = state.ganttPxScale || 1;
+    lastRatio = 1;
+    const rect = wrap.getBoundingClientRect();
+    const focalX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+    const inner = wrap.querySelector('.gantt');
+    const contentWidth = inner ? inner.offsetWidth : wrap.scrollWidth;
+    anchorRatio = (wrap.scrollLeft + focalX) / Math.max(1, contentWidth);
+    e.preventDefault();
+  }, { passive: false });
+
+  wrap.addEventListener('touchmove', (e) => {
+    if (!pinching || e.touches.length !== 2) return;
+    e.preventDefault();
+    const d = dist(e.touches[0], e.touches[1]);
+    const ratio = d / Math.max(1, startDist);
+    lastRatio = ratio;
+    const targetScale = clamp(startScale * ratio, 0.3, 5);
+    const visualRatio = targetScale / startScale;
+    applyPinchVisual(wrap, visualRatio);
+  }, { passive: false });
+
+  const finish = () => {
+    if (!pinching) return;
+    pinching = false;
+    const newScale = clamp(startScale * lastRatio, 0.3, 5);
+    applyPinchVisual(wrap, 1);
+    state.ganttPxScale = newScale;
+    renderGantt();
+    // 重新對齊焦點
+    requestAnimationFrame(() => {
+      const inner = wrap.querySelector('.gantt');
+      const newWidth = inner ? inner.offsetWidth : wrap.scrollWidth;
+      const rect = wrap.getBoundingClientRect();
+      wrap.scrollLeft = anchorRatio * newWidth - rect.width / 2;
+    });
+  };
+
+  wrap.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) finish();
+  });
+  wrap.addEventListener('touchcancel', finish);
+
+  // iOS Safari gesture events（更直接的 scale）
+  wrap.addEventListener('gesturestart', (e) => {
+    if (!isGanttFullscreen()) return;
+    e.preventDefault();
+  });
+  wrap.addEventListener('gesturechange', (e) => {
+    if (!isGanttFullscreen()) return;
+    e.preventDefault();
+  });
+  wrap.addEventListener('gestureend', (e) => {
+    if (!isGanttFullscreen()) return;
+    e.preventDefault();
+  });
+}
+
+async function enterGanttFullscreen() {
+  const section = document.querySelector('.gantt-section');
+  if (!section) return;
+  const req = section.requestFullscreen || section.webkitRequestFullscreen;
+  if (req) {
+    try {
+      await req.call(section);
+      if (screen.orientation && screen.orientation.lock) {
+        try { await screen.orientation.lock('landscape'); } catch (err) { /* iOS 不支援，改用旋轉 fallback */ }
+      }
+      // 若 orientation 仍是 portrait 且為 iOS，補上 CSS 旋轉
+      if (isIOS() && !isLandscape()) {
+        enterGanttCssFallback();
+      }
+      return;
+    } catch (err) {
+      // 標準 API 拒絕，落到 fallback
+    }
+  }
+  enterGanttCssFallback();
+}
+
+function enterGanttCssFallback() {
+  const section = document.querySelector('.gantt-section');
+  if (!section) return;
+  document.body.classList.add('gantt-fs-fallback-active');
+  section.classList.add('gantt-fs-fallback');
+  syncGanttZoomLabels();
+  const wrap = $('gantt-wrap');
+  if (wrap) wrap._scrolled = false;
+  renderGantt();
+}
+
+function exitGanttCssFallback() {
+  const section = document.querySelector('.gantt-section');
+  if (!section) return;
+  document.body.classList.remove('gantt-fs-fallback-active');
+  section.classList.remove('gantt-fs-fallback');
+  syncGanttZoomLabels();
+  const wrap = $('gantt-wrap');
+  if (wrap) wrap._scrolled = false;
+  renderGantt();
+}
+
+async function exitGanttFullscreen() {
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  if (fsEl) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exit) {
+      try { await exit.call(document); } catch (err) {}
+    }
+  }
+  if (document.querySelector('.gantt-section.gantt-fs-fallback')) {
+    exitGanttCssFallback();
+  }
+}
+
+async function toggleGanttFullscreen() {
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  const inFallback = !!document.querySelector('.gantt-section.gantt-fs-fallback');
+  if (fsEl || inFallback) await exitGanttFullscreen();
+  else await enterGanttFullscreen();
+}
+
+function onGanttFullscreenChange() {
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  if (!fsEl && screen.orientation && screen.orientation.unlock) {
+    try { screen.orientation.unlock(); } catch (err) {}
+  }
+  syncGanttZoomLabels();
+  const wrap = $('gantt-wrap');
+  if (wrap) wrap._scrolled = false;
+  renderGantt();
+}
+
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function isLandscape() {
+  return window.innerWidth > window.innerHeight;
 }
 function computeGanttRange() {
   const today = todayDate();
@@ -1016,7 +1244,9 @@ function computeGanttRange() {
   return { min, max };
 }
 function pxPerDay() {
-  return state.ganttZoom === 'month' ? 3 : 9;
+  const base = state.ganttZoom === 'month' ? 3 : 9;
+  const scale = state.ganttPxScale || 1;
+  return base * scale;
 }
 function renderGantt() {
   const wrap = $('gantt-wrap');
@@ -1078,7 +1308,7 @@ function renderGantt() {
     <div class="gantt-corner">項目</div>
     <div class="gantt-tick-row" style="width:${width}px;">`;
   for (const t of ticks) {
-    html += `<div class="gantt-tick" style="width:${t.width}px;">${t.label}</div>`;
+    html += `<div class="gantt-tick" style="width:${t.width}px;"><span class="t-label">${t.label}</span></div>`;
   }
   html += `</div></div>`;
 
