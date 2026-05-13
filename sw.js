@@ -1,6 +1,6 @@
 'use strict';
 
-const VERSION = 'bt-v19';
+const VERSION = 'bt-v20';
 const SHELL = [
   './',
   './index.html',
@@ -28,20 +28,36 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  // Never cache GitHub API — always go to network
   if (url.host === 'api.github.com') return;
   if (e.request.method !== 'GET') return;
-  // Only handle same-origin requests
   if (url.origin !== self.location.origin) return;
 
-  // Cache-first for shell
+  // Shell (HTML/JS/CSS/manifest) → network-first，新版立刻生效；離線時 fallback cache
+  const isShell = /\.(html|js|css)$|\/$|manifest\.json$/.test(url.pathname);
+  if (isShell) {
+    e.respondWith(
+      fetch(e.request).then(res => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(VERSION).then(c => c.put(e.request, copy)).catch(() => {});
+        }
+        return res;
+      }).catch(() =>
+        caches.match(e.request).then(hit => hit || caches.match('./index.html'))
+      )
+    );
+    return;
+  }
+
+  // 圖檔/字型等靜態資源 → cache-first（穩定，少變動）
   e.respondWith(
     caches.match(e.request).then(hit => {
       if (hit) return hit;
       return fetch(e.request).then(res => {
-        // Update cache in background for any same-origin GETs
-        const copy = res.clone();
-        caches.open(VERSION).then(c => c.put(e.request, copy)).catch(() => {});
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(VERSION).then(c => c.put(e.request, copy)).catch(() => {});
+        }
         return res;
       }).catch(() => caches.match('./index.html'));
     })

@@ -723,13 +723,19 @@
   }
   .gantt-wrap {
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: visible;
     -webkit-overflow-scrolling: touch;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: white;
     position: relative;
-    max-height: 60vh;
+    scrollbar-width: none;            /* Firefox */
+    -ms-overflow-style: none;         /* IE / old Edge */
+  }
+  .gantt-wrap::-webkit-scrollbar {    /* WebKit (Safari, Chrome) */
+    width: 0;
+    height: 0;
+    display: none;
   }
   .gantt {
     position: relative;
@@ -1091,8 +1097,6 @@
     .gantt-section  { grid-area: gantt; margin-bottom: 0; align-self: start; }
     .bills-section  { grid-area: bills; margin-bottom: 0; }
     .share-section  { grid-area: share; margin-bottom: 0; }
-    /* Gantt can use a bit more vertical space on desktop */
-    .gantt-wrap { max-height: calc(100vh - 200px); }
   }
 
   /* ===== Gantt fullscreen ===== */

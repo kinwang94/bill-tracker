@@ -1765,6 +1765,14 @@ async function init() {
 
   // Register service worker
   if ('serviceWorker' in navigator) {
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      // 首次安裝不重整；只有「升級」時（先前已有 controller）才 reload
+      if (!hadController || reloading) return;
+      reloading = true;
+      location.reload();
+    });
     try { await navigator.serviceWorker.register('sw.js'); } catch (e) { /* ok */ }
   }
 
