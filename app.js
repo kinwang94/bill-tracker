@@ -46,6 +46,7 @@ let state = {
   ganttPxScale: 1,
   editingId: null,
   showOld: false, // 是否顯示已收合的舊帳單（預設收合）
+  formOpenedFromFallback: false, // openForm 進入時若處於旋轉 fallback，closeForm 後要復原
 };
 
 const OLD_THRESHOLD_DAYS = 60;
@@ -443,6 +444,12 @@ function bindSettings() {
 
 // ---------- Form ----------
 function openForm(billOrPartial = null) {
+  // 旋轉 fallback 下開表單會遇到「視覺橫屏、鍵盤直屏」的衝突——先退出 fallback
+  // 讓使用者用 device 原生方向輸入，closeForm 再回到橫屏
+  if (document.querySelector('.gantt-section.gantt-fs-fallback')) {
+    state.formOpenedFromFallback = true;
+    exitGanttCssFallback();
+  }
   const isEdit = billOrPartial && billOrPartial.id && state.bills.find(b => b.id === billOrPartial.id);
   state.editingId = isEdit ? billOrPartial.id : null;
   $('form-title').textContent = isEdit ? '編輯帳單' : '新增帳單';
@@ -476,6 +483,10 @@ function closeForm() {
   $('form-overlay').classList.remove('open');
   $('form-modal').classList.remove('open');
   state.editingId = null;
+  if (state.formOpenedFromFallback) {
+    state.formOpenedFromFallback = false;
+    enterGanttCssFallback();
+  }
 }
 function updateFmt(inputId, fmtId) {
   const v = parseMoney($(inputId).value);
@@ -974,10 +985,13 @@ function bindGantt() {
     renderGantt();
   });
   $('gantt-next').addEventListener('click', () => {
-    if (state.ganttRangeEnd) {
-      state.ganttRangeEnd = addDays(state.ganttRangeEnd, 180);
-    }
+    if (!state.ganttRangeEnd) return;
+    const wrap = $('gantt-wrap');
+    const prevScroll = wrap ? wrap.scrollLeft : 0;
+    state.ganttRangeEnd = addDays(state.ganttRangeEnd, 180);
     renderGantt();
+    // 新增的範圍在右側，必須跟著捲動才能看見
+    if (wrap) wrap.scrollLeft = prevScroll + 180 * pxPerDay();
   });
   $('gantt-today').addEventListener('click', () => {
     const wrap = $('gantt-wrap');
@@ -1027,6 +1041,38 @@ function bindGantt() {
 function isGanttFullscreen() {
   return !!(document.fullscreenElement || document.webkitFullscreenElement ||
     document.querySelector('.gantt-section.gantt-fs-fallback'));
+}
+
+// 全螢幕時把浮層元素搬進 .gantt-section。兩種模式 selectors 不同：
+// - api: 標準 Fullscreen API（section 變成 fullscreen 元素），所有要顯示的浮層都得是它的子孫
+// - fallback: iOS CSS 旋轉 fallback，只搬讓使用者能在橫向看到的浮層 (FAB/qmenu/toast)；
+//   表單刻意不搬，因為 openForm 會先退出 fallback 讓使用者用直屏鍵盤輸入
+const FULLSCREEN_PORTS = {
+  api: ['#fab-add', '#qmenu', '#toast-container', '#form-overlay', '#form-modal'],
+  fallback: ['#fab-add', '#qmenu', '#toast-container'],
+};
+function portIntoGanttSection(mode) {
+  const section = document.querySelector('.gantt-section');
+  if (!section) return;
+  const selectors = FULLSCREEN_PORTS[mode] || FULLSCREEN_PORTS.api;
+  for (const sel of selectors) {
+    const el = document.querySelector(sel);
+    if (el && !section.contains(el)) {
+      el._fsOrigin = { parent: el.parentNode, next: el.nextSibling };
+      section.appendChild(el);
+    }
+  }
+}
+function restoreFromGanttSection() {
+  // 把所有可能被搬走的元素都掃過一次（用最大集合）
+  for (const sel of FULLSCREEN_PORTS.api) {
+    const el = document.querySelector(sel);
+    if (el && el._fsOrigin) {
+      const { parent, next } = el._fsOrigin;
+      if (parent) parent.insertBefore(el, next || null);
+      delete el._fsOrigin;
+    }
+  }
 }
 
 function syncGanttZoomLabels() {
@@ -1142,6 +1188,7 @@ function bindGanttPinch(wrap) {
 async function enterGanttFullscreen() {
   const section = document.querySelector('.gantt-section');
   if (!section) return;
+  portIntoGanttSection('api');
   const req = section.requestFullscreen || section.webkitRequestFullscreen;
   if (req) {
     try {
@@ -1149,13 +1196,9 @@ async function enterGanttFullscreen() {
       if (screen.orientation && screen.orientation.lock) {
         try { await screen.orientation.lock('landscape'); } catch (err) { /* iOS 不支援，改用旋轉 fallback */ }
       }
-      // 若 orientation 仍是 portrait 且為 iOS，補上 CSS 旋轉
-      if (isIOS() && !isLandscape()) {
-        enterGanttCssFallback();
-      }
       return;
     } catch (err) {
-      // 標準 API 拒絕，落到 fallback
+      // 標準 API 拒絕（iOS Safari 非 video 元素一律會走到這），落到 CSS 旋轉 fallback
     }
   }
   enterGanttCssFallback();
@@ -1164,6 +1207,9 @@ async function enterGanttFullscreen() {
 function enterGanttCssFallback() {
   const section = document.querySelector('.gantt-section');
   if (!section) return;
+  // 若是因為標準 API 失敗回退，先把 modal/overlay 還原回 body（fallback 不需要它們在 section）
+  restoreFromGanttSection();
+  portIntoGanttSection('fallback');
   document.body.classList.add('gantt-fs-fallback-active');
   section.classList.add('gantt-fs-fallback');
   syncGanttZoomLabels();
@@ -1177,6 +1223,7 @@ function exitGanttCssFallback() {
   if (!section) return;
   document.body.classList.remove('gantt-fs-fallback-active');
   section.classList.remove('gantt-fs-fallback');
+  restoreFromGanttSection();
   syncGanttZoomLabels();
   const wrap = $('gantt-wrap');
   if (wrap) wrap._scrolled = false;
@@ -1205,8 +1252,14 @@ async function toggleGanttFullscreen() {
 
 function onGanttFullscreenChange() {
   const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-  if (!fsEl && screen.orientation && screen.orientation.unlock) {
-    try { screen.orientation.unlock(); } catch (err) {}
+  if (!fsEl) {
+    if (screen.orientation && screen.orientation.unlock) {
+      try { screen.orientation.unlock(); } catch (err) {}
+    }
+    // 標準 Fullscreen API 退出時把搬出去的浮層搬回原位
+    if (!document.querySelector('.gantt-section.gantt-fs-fallback')) {
+      restoreFromGanttSection();
+    }
   }
   syncGanttZoomLabels();
   const wrap = $('gantt-wrap');
@@ -1225,7 +1278,7 @@ function isLandscape() {
 function computeGanttRange() {
   const today = todayDate();
   let min = addDays(today, -180);
-  let max = addDays(today, 180);
+  let max = addDays(today, 60);
   // Gantt 不受清單收合影響，永遠顯示全部
   for (const b of state.bills) {
     const s = parseDate(b.startDate);
@@ -1550,15 +1603,31 @@ function showQuickMenu(x, y, bill) {
   menu.style.position = 'fixed';
   menu.style.left = '0px';
   menu.style.top = '0px';
-  // measure after layout
-  const rect = menu.getBoundingClientRect();
-  const w = rect.width || 240, h = rect.height || 280;
-  let left = x;
-  let top = y;
-  if (left + w > innerWidth) left = innerWidth - w - 8;
-  if (top + h > innerHeight) top = Math.max(8, innerHeight - h - 8);
-  if (left < 8) left = 8;
-  if (top < 8) top = 8;
+  // 用 offsetWidth/Height 取得未經 transform 的尺寸（fallback 旋轉時 rect 會被旋轉影響）
+  const w = menu.offsetWidth || 240;
+  const h = menu.offsetHeight || 280;
+  let left, top;
+  const inRotatedSection = !!menu.closest('.gantt-section.gantt-fs-fallback');
+  if (inRotatedSection) {
+    // section 被 rotate(90deg) translateY(-100%)，element 寬 = 100vh、高 = 100vw
+    // 螢幕點 (sx, sy) ↔ element 點 (sy, elH - sx)
+    const elW = window.innerHeight;
+    const elH = window.innerWidth;
+    let ex = y;
+    let ey = elH - x;
+    if (ex + w > elW) ex = elW - w - 8;
+    if (ey + h > elH) ey = elH - h - 8;
+    if (ex < 8) ex = 8;
+    if (ey < 8) ey = 8;
+    left = ex; top = ey;
+  } else {
+    left = x;
+    top = y;
+    if (left + w > innerWidth) left = innerWidth - w - 8;
+    if (top + h > innerHeight) top = Math.max(8, innerHeight - h - 8);
+    if (left < 8) left = 8;
+    if (top < 8) top = 8;
+  }
   menu.style.left = `${left}px`;
   menu.style.top = `${top}px`;
 

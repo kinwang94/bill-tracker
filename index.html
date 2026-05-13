@@ -1213,6 +1213,42 @@
     overflow: auto;
     touch-action: pan-x pan-y;
   }
+
+  /* 全螢幕下，把搬進 section 的浮層擺到合理位置。
+     - 標準 fullscreen API：不旋轉，section 即視口，預設座標就是螢幕座標
+     - fallback：section 被 rotate(90deg) translateY(-100%)，element 內的座標需手動換算
+       對映：element 上→螢幕右、element 右→螢幕下、element 下→螢幕左、element 左→螢幕上 */
+  /* FAB 與標題對角擺位，避免重疊：
+     fallback 標題在 element top-right (= 視覺螢幕右下角)，FAB 改到 element bottom-left (= 視覺螢幕左上角) */
+  .gantt-section.gantt-fs-fallback .fab {
+    top: auto;
+    bottom: 20px;
+    right: auto;
+    left: 20px;
+  }
+  .gantt-section:fullscreen .toast-container,
+  .gantt-section:-webkit-full-screen .toast-container,
+  .gantt-section.gantt-fs-fallback .toast-container {
+    top: 16px;
+    z-index: 250;       /* 全螢幕下 modal 是 201，toast 仍要在最上層 */
+  }
+  /* 全螢幕下浮動標題列 z-index:100，其它浮層要排在它之上 */
+  .gantt-section:fullscreen .modal-overlay,
+  .gantt-section:-webkit-full-screen .modal-overlay { z-index: 200; }
+  .gantt-section:fullscreen .modal,
+  .gantt-section:-webkit-full-screen .modal { z-index: 201; }
+  .gantt-section:fullscreen .qmenu,
+  .gantt-section:-webkit-full-screen .qmenu,
+  .gantt-section.gantt-fs-fallback .qmenu { z-index: 150; }
+  /* FAB 預設 z-index:60 比浮動標題 100 低；目前位置剛好不重疊，保險起見一律拉到標題之上 */
+  .gantt-section:fullscreen .fab,
+  .gantt-section:-webkit-full-screen .fab,
+  .gantt-section.gantt-fs-fallback .fab { z-index: 110; }
+  /* modal 開啟時藏起浮動標題列，免得標題列點擊區擋住 modal 邊緣
+     :has() 需 Safari 15.4+ / Chrome 105+ / Firefox 121+；舊瀏覽器忽略此條，
+     此時靠上方 modal z-index 201 > 標題 100 仍能正確覆蓋 */
+  .gantt-section:fullscreen:has(.modal.open) #gantt-title,
+  .gantt-section:-webkit-full-screen:has(.modal.open) #gantt-title { display: none; }
 </style>
 </head>
 <body>
