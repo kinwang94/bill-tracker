@@ -732,6 +732,7 @@ function bindList() {
     if (!state.selectionMode) state.selection.clear();
     renderList();
     renderSelectionBar();
+    syncGanttSelection();
   });
 
   $('sel-exit').addEventListener('click', () => {
@@ -741,6 +742,7 @@ function bindList() {
     document.body.classList.remove('selection-mode');
     renderList();
     renderSelectionBar();
+    syncGanttSelection();
   });
   $('sel-share').addEventListener('click', () => {
     // sync selection to share calc selection
@@ -911,6 +913,45 @@ function toggleSelect(id) {
   }
   renderList();
   renderSelectionBar();
+  syncGanttSelection();
+}
+
+// 一次選取／取消同名整行的所有帳單（全選則取消，否則全選）
+function toggleSelectRow(name) {
+  const bills = state.bills.filter(b => b.name === name);
+  if (bills.length === 0) return;
+  const allSelected = bills.every(b => state.selection.has(b.id));
+  for (const b of bills) {
+    if (allSelected) state.selection.delete(b.id);
+    else state.selection.add(b.id);
+  }
+  if (state.selection.size > 0 && !state.selectionMode) {
+    state.selectionMode = true;
+    document.body.classList.add('selection-mode');
+    $('selection-toggle').checked = true;
+  }
+  renderList();
+  renderSelectionBar();
+  syncGanttSelection();
+}
+
+// 將目前選取狀態同步到 gantt 圖（不重繪，避免捲動位置跳動）
+function syncGanttSelection() {
+  const wrap = $('gantt-wrap');
+  if (!wrap) return;
+  wrap.querySelectorAll('.gantt-bar').forEach(bar => {
+    bar.classList.toggle('selected', state.selection.has(bar.dataset.id));
+  });
+  wrap.querySelectorAll('.gantt-row-label').forEach(label => {
+    const bills = state.bills.filter(b => b.name === label.dataset.name);
+    const sel = bills.filter(b => state.selection.has(b.id)).length;
+    const rowSel = sel > 0 && sel === bills.length;
+    const rowPartial = sel > 0 && sel < bills.length;
+    label.classList.toggle('row-selected', rowSel);
+    label.classList.toggle('row-partial', rowPartial);
+    const check = label.querySelector('.gantt-row-check');
+    if (check) check.textContent = rowSel ? '✓' : (rowPartial ? '–' : '');
+  });
 }
 
 function renderSelectionBar() {
@@ -1025,7 +1066,7 @@ function bindGantt() {
       if (matchMedia('(pointer: fine)').matches) return;
       if (document.fullscreenElement) return;
       if (document.querySelector('.gantt-section.gantt-fs-fallback')) return;
-      if (e.target.closest('.gantt-bar, .gantt-due, button, select, a')) return;
+      if (e.target.closest('.gantt-bar, .gantt-due, .gantt-row-label, button, select, a')) return;
       await enterGanttFullscreen();
     });
   }
@@ -1401,10 +1442,16 @@ function renderGantt() {
   for (const [name, billList] of sortedGroups) {
     const { laneCount, idLane } = assignLanes(billList);
     const rowHeight = TOP_PAD + laneCount * BAR_H + (laneCount - 1) * BAR_GAP + BOTTOM_PAD;
+    const selCount = billList.filter(b => state.selection.has(b.id)).length;
+    const rowSel = selCount > 0 && selCount === billList.length;
+    const rowPartial = selCount > 0 && selCount < billList.length;
     html += `<div class="gantt-row" data-name="${escapeHtml(name)}" style="min-height:${rowHeight}px;">`;
-    html += `<div class="gantt-row-label" style="min-height:${rowHeight}px;">
-      <div class="nm">${escapeHtml(name)}</div>
-      <div class="sub">${billList.length} 筆${laneCount > 1 ? ` ・ ${laneCount} 層` : ''}</div>
+    html += `<div class="gantt-row-label${rowSel ? ' row-selected' : ''}${rowPartial ? ' row-partial' : ''}" data-name="${escapeHtml(name)}" style="min-height:${rowHeight}px;">
+      <span class="gantt-row-check" data-act="toggle-row" aria-label="選取整行">${rowSel ? '✓' : (rowPartial ? '–' : '')}</span>
+      <div class="gantt-row-label-text">
+        <div class="nm">${escapeHtml(name)}</div>
+        <div class="sub">${billList.length} 筆${laneCount > 1 ? ` ・ ${laneCount} 層` : ''}</div>
+      </div>
     </div>`;
     html += `<div class="gantt-track" data-name="${escapeHtml(name)}" style="width:${width}px; min-height:${rowHeight}px;">`;
     // 渲染 bars
@@ -1431,7 +1478,8 @@ function renderGantt() {
         ? `<span class="b-fee">手續費 ${escapeHtml(fmtCurrency(b.fee))}</span>`
         : '';
       const barColor = colorForName(b.name);
-      html += `<div class="gantt-bar ${cls}" data-id="${b.id}"
+      const selected = state.selection.has(b.id);
+      html += `<div class="gantt-bar ${cls}${selected ? ' selected' : ''}" data-id="${b.id}"
                 style="left:${left}px; width:${w}px; top:${top}px; background:${barColor};"
                 title="${escapeHtml(titleParts.join('  '))}">
         <div class="b-main">${main}</div>
@@ -1498,14 +1546,23 @@ function renderGantt() {
 }
 
 function wireGanttInteractions(wrap, min, max, px) {
-  // Click bar → quick menu
+  // Click bar → 選取模式下切換選取，否則開快速選單
   wrap.querySelectorAll('.gantt-bar').forEach(bar => {
     bar.addEventListener('click', e => {
       e.stopPropagation();
       const id = bar.dataset.id;
       const b = state.bills.find(x => x.id === id);
       if (!b) return;
-      showQuickMenu(e.clientX, e.clientY, b);
+      if (state.selectionMode) toggleSelect(b.id);
+      else showQuickMenu(e.clientX, e.clientY, b);
+    });
+  });
+
+  // Click 左側列標籤 → 一次選取／取消整行
+  wrap.querySelectorAll('.gantt-row-label').forEach(label => {
+    label.addEventListener('click', e => {
+      e.stopPropagation();
+      toggleSelectRow(label.dataset.name);
     });
   });
 

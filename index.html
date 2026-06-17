@@ -802,10 +802,48 @@
     z-index: 3;
     font-size: 0.85rem;
     display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 7px;
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .gantt-row-label-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
     flex-direction: column;
     justify-content: center;
     overflow: hidden;
   }
+  .gantt-row-check {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border);
+    border-radius: 4px;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #fff;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .gantt-row-label.row-selected .gantt-row-check {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .gantt-row-label.row-partial .gantt-row-check {
+    background: var(--accent);
+    border-color: var(--accent);
+    opacity: 0.5;
+  }
+  .gantt-row-label.row-selected,
+  .gantt-row-label.row-partial { background: color-mix(in srgb, var(--accent) 8%, white); }
+  body:not(.selection-mode) .gantt-row-check { display: none; }
   .gantt-row-label .nm {
     font-weight: 600;
     overflow: hidden;
@@ -914,6 +952,10 @@
   .gantt-bar.due-soon {
     box-shadow: 0 0 0 2px var(--overdue) inset, 0 1px 2px rgba(0,0,0,0.15);
   }
+  .gantt-bar.selected {
+    box-shadow: 0 0 0 3px var(--accent), 0 1px 4px rgba(0,0,0,0.25);
+  }
+  .gantt-bar.paid.selected { opacity: 0.85; filter: none; }
   .gantt-today {
     position: absolute;
     top: 0;
