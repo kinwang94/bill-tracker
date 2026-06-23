@@ -1475,7 +1475,7 @@ function renderGantt() {
       if (hasFee) titleParts.push(`含手續費 ${fmtCurrency(b.fee)}`);
       else if (b.overseas && b.fee == null) titleParts.push('海外消費，手續費未入帳');
       const feeBadge = hasFee
-        ? `<span class="b-fee">手續費 ${escapeHtml(fmtCurrency(b.fee))}</span>`
+        ? `<span class="b-fee">${escapeHtml(fmtCurrency(b.fee))}</span>`
         : '';
       const barColor = colorForName(b.name);
       const selected = state.selection.has(b.id);

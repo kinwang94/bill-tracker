@@ -1,6 +1,6 @@
 'use strict';
 
-const VERSION = 'bt-v22';
+const VERSION = 'bt-v23';
 const SHELL = [
   './',
   './index.html',
